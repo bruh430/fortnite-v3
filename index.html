@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Mini Fortnite v4 - Mini-Map, Scope & POI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        
+        /* Nişangah ve Hitmarker */
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            width: 18px; height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: transform 0.08s;
+        }
+        #hitmarker {
+            display: none;
+            position: absolute; top: 50%; left: 50%;
+            width: 28px; height: 28px;
+            transform: translate(-50%, -50%) rotate(45deg);
+            pointer-events: none;
+        }
+        #hitmarker::before, #hitmarker::after {
+            content: ''; position: absolute; background: #facc15;
+            box-shadow: 0 0 8px #ef4444;
+        }
+        #hitmarker::before { top: 12px; left: 0; width: 28px; height: 4px; }
+        #hitmarker::after { top: 0; left: 12px; width: 4px; height: 28px; }
+
+        /* Keskin Nişancı Dürbünü (Scope Overlay) */
+        #sniperScope {
+            display: none;
+            position: absolute; inset: 0;
+            background: radial-gradient(circle, transparent 26%, rgba(0, 0, 0, 0.96) 28%);
+            pointer-events: none; z-index: 5;
+        }
+        #sniperScope::before {
+            content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 2px;
+            background: rgba(239, 68, 68, 0.7);
+        }
+        #sniperScope::after {
+            content: ''; position: absolute; left: 50%; top: 0; width: 2px; height: 100%;
+            background: rgba(239, 68, 68, 0.7);
+        }
+
+        /* Hasar Sayıları */
+        #damageContainer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+        .dmg-popup {
+            position: absolute; font-weight: 900; font-size: 22px;
+            color: #facc15; text-shadow: 2px 2px 0 #000;
+            transform: translate(-50%, -50%);
+            animation: floatUp 0.7s ease-out forwards;
+        }
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+            100% { opacity: 0; transform: translate(-50%, -110%) scale(0.9); }
+        }
+
+        /* Sol Üst Mini-Map */
+        #minimapBox {
+            position: absolute; top: 15px; left: 15px;
+            background: rgba(15, 23, 42, 0.85);
+            padding: 8px; border-radius: 12px;
+            border: 2px solid #38bdf8;
+            pointer-events: none; z-index: 6;
+        }
+        #minimapCanvas { display: block; border-radius: 6px; background: #1e3a2f; }
+        #locationTag {
+            text-align: center; color: #facc15;
+            font-size: 13px; font-weight: bold; margin-top: 6px;
+        }
+
+        #busPrompt {
+            display: none;
+            position: absolute; top: 22%; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.88);
+            color: #facc15; padding: 14px 26px;
+            border-radius: 12px; border: 2px solid #facc15;
+            font-size: 20px; font-weight: bold;
+            pointer-events: none; text-align: center;
+        }
+
+        #hud {
+            position: absolute; bottom: 20px; left: 20px;
+            background: rgba(15, 23, 42, 0.85);
+            color: white; padding: 14px 18px; border-radius: 12px;
+            border-left: 4px solid #38bdf8; pointer-events: none;
+            width: 300px; z-index: 6;
+        }
+        .bar-container {
+            width: 100%; height: 15px; background: #1e293b;
+            border-radius: 6px; overflow: hidden; margin: 4px 0 8px 0;
+            border: 1px solid #334155;
+        }
+        .bar-fill { height: 100%; transition: width 0.15s; }
+        #shieldBar { background: linear-gradient(90deg, #0284c7, #38bdf8); width: 50%; }
+        #hpBar { background: linear-gradient(90deg, #16a34a, #4ade80); width: 100%; }
+        .bar-label { font-size: 13px; font-weight: bold; display: flex; justify-content: space-between; }
+
+        #inventory {
+            position: absolute; bottom: 20px; right: 20px;
+            display: flex; gap: 10px; pointer-events: none; z-index: 6;
+        }
+        .slot {
+            background: rgba(15, 23, 42, 0.85);
+            border: 2px solid #475569;
+            color: #cbd5e1; padding: 10px 14px;
+            border-radius: 10px; text-align: center;
+            font-size: 13px; font-weight: bold;
+        }
+        .slot.active {
+            border-color: #facc15;
+            background: rgba(250, 204, 21, 0.22);
+            color: #fff;
+            transform: translateY(-5px);
+        }
+
+        #topInfo {
+            position: absolute; top: 15px; right: 20px;
+            background: rgba(15, 23, 42, 0.85);
+            color: white; padding: 10px 18px; border-radius: 8px;
+            font-size: 16px; font-weight: bold; pointer-events: none; z-index: 6;
+        }
+
+        #overlay {
+            position: absolute; inset: 0;
+            background: rgba(15, 23, 42, 0.9);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: white; text-align: center; cursor: pointer; z-index: 20;
+        }
+        #overlay h1 { font-size: 40px; color: #facc15; margin-bottom: 10px; }
+        #overlay p { font-size: 16px; max-width: 580px; line-height: 1.6; color: #cbd5e1; }
+        button {
+            margin-top: 20px; padding: 12px 28px; font-size: 18px;
+            font-weight: bold; background: #facc15; color: #0f172a;
+            border: none; border-radius: 8px; cursor: pointer;
+        }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div id="sniperScope"></div>
+    <div id="crosshair"></div>
+    <div id="hitmarker"></div>
+    <div id="damageContainer"></div>
+    <div id="busPrompt">[SPACE] Tuşuna Basarak Otobüsten Atla!</div>
+
+    <!-- Sol Üst Mini-Map -->
+    <div id="minimapBox">
+        <canvas id="minimapCanvas" width="165" height="165"></canvas>
+        <div id="locationTag">Bölge: Gökyüzü</div>
+    </div>
+
+    <div id="topInfo">
+        Kalan Rakip: <span id="enemyCount" style="color:#f87171;">16</span> | 
+        Leş: <span id="killCount" style="color:#facc15;">0</span>
+    </div>
+
+    <div id="hud">
+        <div class="bar-label"><span style="color:#38bdf8;">KALKAN</span><span id="shieldText">50 / 100</span></div>
+        <div class="bar-container"><div class="bar-fill" id="shieldBar"></div></div>
+
+        <div class="bar-label"><span style="color:#4ade80;">CAN (HP)</span><span id="hpText">100 / 100</span></div>
+        <div class="bar-container"><div class="bar-fill" id="hpBar"></div></div>
+
+        <div style="font-size: 15px; font-weight: bold; color: #fb923c; margin-top: 4px;">
+            Odun: <span id="woodVal">150</span>
+        </div>
+        <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">
+            [WASD] Yürü | [Shift] Koş | [Space] Zıpla | [F / Orta Tık] Dürbün | [Sağ Tık/E] Duvar
+        </div>
+    </div>
+
+    <div id="inventory">
+        <div class="slot active" id="slot1">[1] Taarruz Tüfeği</div>
+        <div class="slot" id="slot2">[2] Pompalı Tüfek</div>
+        <div class="slot" id="slot3">[3] Keskin Nişancı</div>
+    </div>
+
+    <div id="overlay">
+        <h1 id="overlayTitle">3D MINI FORTNITE v4</h1>
+        <p id="overlayDesc">Başlamak için ekrana tıkla.<br>Rakipler birbirleriyle de savaşıyor! [3] Keskin Nişancı ile [F] tuşuna basarak dürbün açabilirsin.</p>
+        <button id="restartBtn" style="display:none;" onclick="location.reload()">Tekrar Oyna</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x7dd3fc);
+        scene.fog = new THREE.Fog(0x7dd3fc, 70, 290);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 450);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Işıklar
+        scene.add(new THREE.AmbientLight(0xffffff, 0.68));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+        dirLight.position.set(100, 160, 100);
+        scene.add(dirLight);
+
+        // Genişletilmiş Harita Zemini
+        const mapSize = 320;
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(mapSize, mapSize),
+            new THREE.MeshLambertMaterial({ color: 0x4caf50 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+        scene.add(new THREE.GridHelper(mapSize, 64, 0x2e7d32, 0x388e3c));
+
+        // --- POI BÖLGELERİ VE BİNALAR ---
+        const buildings = [];
+        function createBuilding(x, z, w, h, d, color) {
+            const bMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(w, h, d),
+                new THREE.MeshLambertMaterial({ color })
+            );
+            bMesh.position.set(x, h / 2, z);
+            scene.add(bMesh);
+
+            const roof = new THREE.Mesh(
+                new THREE.BoxGeometry(w + 0.6, 0.5, d + 0.6),
+                new THREE.MeshLambertMaterial({ color: 0x1e293b })
+            );
+            roof.position.set(x, h + 0.25, z);
+            scene.add(roof);
+
+            buildings.push({ x, z, w, h, d, color });
+        }
+
+        // 1. TILTED TOWERS (Merkez: 0, 0)
+        createBuilding(-14, -14, 12, 24, 12, 0x64748b);
+        createBuilding(16, -12, 14, 16, 10, 0x94a3b8);
+        createBuilding(-15, 16, 11, 13, 14, 0xb45309);
+        createBuilding(14, 15, 13, 20, 13, 0x475569);
+        createBuilding(0, -28, 16, 10, 10, 0xd97706);
+
+        // 2. PLEASANT PARK (Kuzeybatı: -85, -85)
+        createBuilding(-75, -75, 11, 8, 10, 0xdc2626);
+        createBuilding(-95, -75, 10, 7, 11, 0xeab308);
+        createBuilding(-75, -98, 12, 9, 10, 0x2563eb);
+        createBuilding(-96, -98, 11, 8, 11, 0x16a34a);
+
+        // 3. RETAIL ROW (Güneydoğu: 85, 85)
+        createBuilding(75, 75, 18, 9, 10, 0x0284c7);
+        createBuilding(98, 78, 12, 11, 12, 0xf97316);
+        createBuilding(82, 98, 16, 8, 10, 0x7c3aed);
+
+        // 4. LOOT LAKE (Güneybatı: -85, 85) - Su ve Ortadaki Ev
+        const lakeMesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(32, 32, 0.25, 32),
+            new THREE.MeshLambertMaterial({ color: 0x0ea5e9 })
+        );
+        lakeMesh.position.set(-85, 0.12, 85);
+        scene.add(lakeMesh);
+        createBuilding(-85, 85, 11, 9, 11, 0x854d0e); // Göl ortasındaki ada evi
+
+        // 5. TOMATO TEMPLE (Kuzeydoğu: 85, -85) - Piramit Tapınak Katları
+        createBuilding(85, -85, 22, 6, 22, 0x78716c);
+        createBuilding(85, -85, 14, 12, 14, 0xa8a29e);
+        createBuilding(85, -85, 7, 18, 7, 0xdc2626);
+
+        // Savaş Otobüsü
+        const busGroup = new THREE.Group();
+        const busBody = new THREE.Mesh(new THREE.BoxGeometry(4, 3.5, 9), new THREE.MeshLambertMaterial({ color: 0x1d4ed8 }));
+        busGroup.add(busBody);
+        const balloon = new THREE.Mesh(new THREE.SphereGeometry(4.5, 16, 16), new THREE.MeshLambertMaterial({ color: 0xfacc15 }));
+        balloon.position.y = 6.5;
+        busGroup.add(balloon);
+        busGroup.position.set(-135, 75, -135);
+        busGroup.lookAt(135, 75, 135);
+        scene.add(busGroup);
+
+        // Karakter Modeli Oluşturucu
+        function createCharacter(shirtColor, pantsColor, scale = 1) {
+            const group = new THREE.Group();
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.65, 0.65), new THREE.MeshLambertMaterial({ color: 0xfcd34d }));
+            head.position.y = 2.45;
+            group.add(head);
+
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.0, 0.5), new THREE.MeshLambertMaterial({ color: shirtColor }));
+            torso.position.y = 1.6;
+            group.add(torso);
+
+            const legGeo = new THREE.BoxGeometry(0.36, 1.05, 0.4);
+            const legMat = new THREE.MeshLambertMaterial({ color: pantsColor });
+
+            const leftLeg = new THREE.Mesh(legGeo, legMat);
+            leftLeg.position.set(-0.24, -0.52, 0);
+            const leftLegPivot = new THREE.Group();
+            leftLegPivot.position.set(0, 1.1, 0);
+            leftLegPivot.add(leftLeg);
+            group.add(leftLegPivot);
+
+            const rightLeg = new THREE.Mesh(legGeo, legMat);
+            rightLeg.position.set(0.24, -0.52, 0);
+            const rightLegPivot = new THREE.Group();
+            rightLegPivot.position.set(0, 1.1, 0);
+            rightLegPivot.add(rightLeg);
+            group.add(rightLegPivot);
+
+            const armGeo = new THREE.BoxGeometry(0.28, 0.9, 0.3);
+            const armMat = new THREE.MeshLambertMaterial({ color: 0xfcd34d });
+
+            const leftArm = new THREE.Mesh(armGeo, armMat);
+            leftArm.position.set(-0.62, -0.35, 0);
+            const leftArmPivot = new THREE.Group();
+            leftArmPivot.position.set(0, 2.0, 0);
+            leftArmPivot.add(leftArm);
+            group.add(leftArmPivot);
+
+            const rightArm = new THREE.Mesh(armGeo, armMat);
+            rightArm.position.set(0.62, -0.35, -0.2);
+            rightArm.rotation.x = Math.PI / 3;
+            const rightArmPivot = new THREE.Group();
+            rightArmPivot.position.set(0, 2.0, 0);
+            rightArmPivot.add(rightArm);
+            group.add(rightArmPivot);
+
+            const gun = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, 1.1), new THREE.MeshLambertMaterial({ color: 0x1e293b }));
+            gun.position.set(0.62, 1.65, -0.65);
+            group.add(gun);
+
+            group.scale.set(scale, scale, scale);
+            return { group, leftLegPivot, rightLegPivot, leftArmPivot, gun };
+        }
+
+        const playerModel = createCharacter(0x2563eb, 0x1e3a8a, 1);
+        const playerGroup = playerModel.group;
+        scene.add(playerGroup);
+
+        const gliderMesh = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.2, 1.8), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
+        gliderMesh.position.y = 3.5;
+        gliderMesh.visible = false;
+        playerGroup.add(gliderMesh);
+
+        // Silahlar ve Dürbün Durumu
+        const weapons = {
+            1: { damage: 24, speed: 1.8, cooldown: 160, pellets: 1, spread: 0.02, color: 0xfacc15, size: 0.16, gunScale: 1.0 },
+            2: { damage: 18, speed: 1.4, cooldown: 650, pellets: 5, spread: 0.14, color: 0xf97316, size: 0.14, gunScale: 0.85 },
+            3: { damage: 95, speed: 3.2, cooldown: 1100, pellets: 1, spread: 0.001, color: 0x38bdf8, size: 0.22, gunScale: 1.45 }
+        };
+        let currentWeapon = 1;
+        let isScoped = false;
+        let lastShotTime = 0;
+
+        function setScope(state) {
+            isScoped = state && currentWeapon === 3 && flightState === "ground";
+            document.getElementById("sniperScope").style.display = isScoped ? "block" : "none";
+            document.getElementById("crosshair").style.display = isScoped ? "none" : "block";
+            camera.fov = isScoped ? 24 : 70;
+            camera.updateProjectionMatrix();
+        }
+
+        function selectWeapon(num) {
+            currentWeapon = num;
+            if (num !== 3) setScope(false);
+            document.querySelectorAll(".slot").forEach(el => el.classList.remove("active"));
+            document.getElementById("slot" + num).classList.add("active");
+            playerModel.gun.scale.z = weapons[num].gunScale;
+        }
+
+        // Oyun Değişkenleri
+        let isPlaying = false, gameOver = false, flightState = "bus";
+        const playerStats = { hp: 100, shield: 50, wood: 150, kills: 0, vy: 0, onGround: false };
+        let yaw = -Math.PI / 4, pitch = 0.25, walkCycle = 0;
+        const keys = {};
+
+        const bullets = [], walls = [], trees = [], enemies = [], items = [], particles = [];
+
+        // Vuruş Efektleri (Hitmarker, Uçan Hasar Sayısı, Kıvılcım)
+        let hitmarkerTimer = null;
+        function triggerHitEffect(worldPos, damageAmount) {
+            // Hitmarker
+            const hm = document.getElementById("hitmarker");
+            hm.style.display = "block";
+            clearTimeout(hitmarkerTimer);
+            hitmarkerTimer = setTimeout(() => hm.style.display = "none", 160);
+
+            // 3D Dünya Konumunu Ekran Koordinatına Çevir (Hasar Sayısı)
+            const vec = worldPos.clone().project(camera);
+            if (vec.z < 1) {
+                const x = (vec.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-(vec.y * 0.5) + 0.5) * window.innerHeight;
+                const el = document.createElement("div");
+                el.className = "dmg-popup";
+                el.innerText = `-${damageAmount}`;
+                el.style.left = `${x + (Math.random() - 0.5) * 20}px`;
+                el.style.top = `${y}px`;
+                document.getElementById("damageContainer").appendChild(el);
+                setTimeout(() => el.remove(), 700);
+            }
+        }
+
+        function spawnImpactParticles(pos, color) {
+            for (let i = 0; i < 6; i++) {
+                const p = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.18, 0.18, 0.18),
+                    new THREE.MeshBasicMaterial({ color })
+                );
+                p.position.copy(pos);
+                scene.add(p);
+                particles.push({
+                    mesh: p,
+                    vel: new THREE.Vector3((Math.random() - 0.5) * 0.3, Math.random() * 0.25, (Math.random() - 0.5) * 0.3),
+                    life: 20
+                });
+            }
+        }
+
+        // Ağaçlar
+        function createTree(x, z) {
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 4), new THREE.MeshLambertMaterial({ color: 0x78350f }));
+            trunk.position.y = 2;
+            tree.add(trunk);
+
+            const leaves = new THREE.Mesh(new THREE.ConeGeometry(2.8, 6, 8), new THREE.MeshLambertMaterial({ color: 0x15803d }));
+            leaves.position.y = 6;
+            tree.add(leaves);
+
+            tree.position.set(x, 0, z);
+            scene.add(tree);
+            trees.push({ mesh: tree, x, z, hp: 60 });
+        }
+
+        for (let i = 0; i < 55; i++) {
+            const rx = (Math.random() - 0.5) * (mapSize - 25);
+            const rz = (Math.random() - 0.5) * (mapSize - 25);
+            // POI merkezlerine ve göle ağaç koyma
+            const inPOI = (Math.hypot(rx, rz) < 38) ||
+                          (Math.hypot(rx + 85, rz + 85) < 30) ||
+                          (Math.hypot(rx - 85, rz - 85) < 30) ||
+                          (Math.hypot(rx + 85, rz - 85) < 35) ||
+                          (Math.hypot(rx - 85, rz + 85) < 28);
+            if (!inPOI) createTree(rx, rz);
+        }
+
+        // Itemler
+        function spawnItem(type, x, y, z) {
+            let color, geo;
+            if (type === "medkit") { color = 0x22c55e; geo = new THREE.BoxGeometry(0.9, 0.6, 0.9); }
+            else if (type === "shield") { color = 0x38bdf8; geo = new THREE.CylinderGeometry(0.35, 0.45, 0.9, 12); }
+            else { color = 0xd97706; geo = new THREE.BoxGeometry(1.0, 0.5, 0.7); }
+
+            const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.3 }));
+            mesh.position.set(x, y + 0.8, z);
+            scene.add(mesh);
+            items.push({ mesh, type });
+        }
+
+        const itemTypes = ["medkit", "shield", "wood"];
+        buildings.forEach((b, idx) => spawnItem(itemTypes[idx % 3], b.x, b.h + 0.5, b.z));
+        for (let i = 0; i < 25; i++) {
+            spawnItem(itemTypes[i % 3], (Math.random() - 0.5) * 260, 0, (Math.random() - 0.5) * 260);
+        }
+
+        // Düşman Sınıfları (Artık birbirlerine de saldırıyorlar!)
+        const enemyTypes = [
+            { name: "Asker", shirt: 0xdc2626, pants: 0x450a0a, hp: 100, speed: 0.13, scale: 1.0, damage: 12, cooldown: 75 },
+            { name: "Hızlı Akıncı", shirt: 0xeab308, pants: 0x713f12, hp: 75, speed: 0.21, scale: 0.92, damage: 9, cooldown: 50 },
+            { name: "Ağır Tank", shirt: 0x9333ea, pants: 0x3b0764, hp: 200, speed: 0.08, scale: 1.35, damage: 22, cooldown: 105 }
+        ];
+
+        function spawnEnemy(x, z) {
+            const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+            const model = createCharacter(type.shirt, type.pants, type.scale);
+            model.group.position.set(x, 0, z);
+            scene.add(model.group);
+            enemies.push({
+                id: Math.random(),
+                model,
+                type,
+                hp: type.hp,
+                cooldown: 50 + Math.random() * 60,
+                walkTime: Math.random() * 10
+            });
+        }
+
+        for (let i = 0; i < 16; i++) {
+            spawnEnemy((Math.random() - 0.5) * (mapSize - 40), (Math.random() - 0.5) * (mapSize - 40));
+        }
+
+        // Fırtına
+        let stormRadius = 175;
+        const stormMesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(1, 1, 90, 32, 1, true),
+            new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+        );
+        stormMesh.position.y = 45;
+        scene.add(stormMesh);
+
+        // Pointer Lock
+        const overlay = document.getElementById("overlay");
+        overlay.addEventListener("click", () => { if (!gameOver) document.body.requestPointerLock(); });
+
+        document.addEventListener("pointerlockchange", () => {
+            if (document.pointerLockElement === document.body) {
+                isPlaying = true;
+                overlay.style.display = "none";
+                if (flightState === "bus") document.getElementById("busPrompt").style.display = "block";
+            } else if (!gameOver) {
+                isPlaying = false;
+                setScope(false);
+                overlay.style.display = "flex";
+                document.getElementById("overlayTitle").innerText = "DURAKLATILDI";
+                document.getElementById("overlayDesc").innerText = "Devam etmek için ekrana tıkla.";
+            }
+        });
+
+        // Kontroller
+        window.addEventListener("keydown", e => {
+            keys[e.code] = true;
+            if (!isPlaying) return;
+            if (e.code === "Digit1") selectWeapon(1);
+            if (e.code === "Digit2") selectWeapon(2);
+            if (e.code === "Digit3") selectWeapon(3);
+            if (e.code === "KeyF") setScope(!isScoped);
+            if (e.code === "KeyE" && flightState === "ground") buildWall();
+
+            if (e.code === "Space") {
+                if (flightState === "bus") {
+                    flightState = "gliding";
+                    gliderMesh.visible = true;
+                    document.getElementById("busPrompt").style.display = "none";
+                } else if (flightState === "ground" && playerStats.onGround) {
+                    playerStats.vy = 0.36;
+                    playerStats.onGround = false;
+                }
+            }
+        });
+        window.addEventListener("keyup", e => keys[e.code] = false);
+
+        window.addEventListener("mousemove", e => {
+            if (!isPlaying) return;
+            const sens = isScoped ? 0.0009 : 0.0025;
+            yaw -= e.movementX * sens;
+            pitch = Math.max(-0.35, Math.min(0.8, pitch + e.movementY * sens));
+        });
+
+        window.addEventListener("mousedown", e => {
+            if (!isPlaying || flightState !== "ground") return;
+            if (e.button === 0) shoot();
+            if (e.button === 1) { e.preventDefault(); setScope(!isScoped); }
+            if (e.button === 2) buildWall();
+        });
+
+        function shoot() {
+            const now = performance.now();
+            const w = weapons[currentWeapon];
+            if (now - lastShotTime < w.cooldown) return;
+            lastShotTime = now;
+
+            const baseDir = new THREE.Vector3(-Math.sin(yaw), -pitch * 0.5, -Math.cos(yaw)).normalize();
+
+            for (let p = 0; p < w.pellets; p++) {
+                const bullet = new THREE.Mesh(
+                    new THREE.SphereGeometry(w.size, 8, 8),
+                    new THREE.MeshBasicMaterial({ color: w.color })
+                );
+                const dir = baseDir.clone();
+                dir.x += (Math.random() - 0.5) * w.spread;
+                dir.y += (Math.random() - 0.5) * w.spread;
+                dir.z += (Math.random() - 0.5) * w.spread;
+                dir.normalize();
+
+                bullet.position.copy(playerGroup.position).add(new THREE.Vector3(0, 1.75, 0)).addScaledVector(dir, 1.4);
+                scene.add(bullet);
+                bullets.push({ mesh: bullet, dir, speed: w.speed, damage: w.damage, owner: "player", shooterId: "player", life: 100 });
+            }
+        }
+
+        function buildWall() {
+            if (playerStats.wood < 10) return;
+            playerStats.wood -= 10;
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(4.5, 3.2, 0.4), new THREE.MeshLambertMaterial({ color: 0xb45309 }));
+            const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+            wall.position.copy(playerGroup.position).addScaledVector(forward, 4);
+            wall.position.y = playerGroup.position.y + 1.6;
+            wall.rotation.y = yaw;
+            scene.add(wall);
+            walls.push({ mesh: wall, hp: 100 });
+        }
+
+        function takeDamage(amount) {
+            if (playerStats.shield > 0) {
+                if (playerStats.shield >= amount) playerStats.shield -= amount;
+                else { const rem = amount - playerStats.shield; playerStats.shield = 0; playerStats.hp -= rem; }
+            } else {
+                playerStats.hp -= amount;
+            }
+        }
+
+        function triggerEnd(title, desc) {
+            gameOver = true; isPlaying = false; setScope(false);
+            document.exitPointerLock();
+            overlay.style.display = "flex";
+            document.getElementById("overlayTitle").innerText = title;
+            document.getElementById("overlayDesc").innerText = desc;
+            document.getElementById("restartBtn").style.display = "inline-block";
+        }
+
+        function getGroundHeight(x, y, z) {
+            let maxH = 0;
+            for (const b of buildings) {
+                if (Math.abs(x - b.x) < b.w / 2 + 0.5 && Math.abs(z - b.z) < b.d / 2 + 0.5 && y >= b.h - 0.5) {
+                    maxH = Math.max(maxH, b.h + 0.5);
+                }
+            }
+            return maxH;
+        }
+
+        function resolveBuildingCollision(pos) {
+            for (const b of buildings) {
+                if (pos.y < b.h) {
+                    const halfW = b.w / 2 + 0.8, halfD = b.d / 2 + 0.8;
+                    const dx = pos.x - b.x, dz = pos.z - b.z;
+                    if (Math.abs(dx) < halfW && Math.abs(dz) < halfD) {
+                        if (halfW - Math.abs(dx) < halfD - Math.abs(dz)) pos.x = b.x + Math.sign(dx) * halfW;
+                        else pos.z = b.z + Math.sign(dz) * halfD;
+                    }
+                }
+            }
+        }
+
+        // --- MINI-MAP ÇİZİM FONKSİYONU ---
+        const mmCanvas = document.getElementById("minimapCanvas");
+        const mmCtx = mmCanvas.getContext("2d");
+        function drawMinimap() {
+            const w = mmCanvas.width, h = mmCanvas.height;
+            mmCtx.clearRect(0, 0, w, h);
+
+            const toMap = val => ((val + mapSize / 2) / mapSize) * w;
+
+            // Loot Lake Suyu
+            mmCtx.fillStyle = "#0ea5e9";
+            mmCtx.beginPath();
+            mmCtx.arc(toMap(-85), toMap(85), (32 / mapSize) * w, 0, Math.PI * 2);
+            mmCtx.fill();
+
+            // Binalar (POI)
+            mmCtx.fillStyle = "#94a3b8";
+            buildings.forEach(b => {
+                mmCtx.fillRect(toMap(b.x - b.w / 2), toMap(b.z - b.d / 2), (b.w / mapSize) * w, (b.d / mapSize) * h);
+            });
+
+            // Eşyalar (Yeşil/Mavi küçük noktalar)
+            items.forEach(it => {
+                mmCtx.fillStyle = it.type === "medkit" ? "#4ade80" : (it.type === "shield" ? "#38bdf8" : "#fb923c");
+                mmCtx.fillRect(toMap(it.mesh.position.x) - 1.5, toMap(it.mesh.position.z) - 1.5, 3, 3);
+            });
+
+            // Düşmanlar (Kırmızı Noktalar)
+            mmCtx.fillStyle = "#ef4444";
+            enemies.forEach(en => {
+                mmCtx.beginPath();
+                mmCtx.arc(toMap(en.model.group.position.x), toMap(en.model.group.position.z), 3.2, 0, Math.PI * 2);
+                mmCtx.fill();
+            });
+
+            // Fırtına Çemberi (Mor)
+            mmCtx.strokeStyle = "#c084fc";
+            mmCtx.lineWidth = 2;
+            mmCtx.beginPath();
+            mmCtx.arc(w / 2, h / 2, (stormRadius / mapSize) * w, 0, Math.PI * 2);
+            mmCtx.stroke();
+
+            // Oyuncu Konumu ve Bakış Yönü (Sarı Üçgen)
+            const px = toMap(playerGroup.position.x);
+            const pz = toMap(playerGroup.position.z);
+            mmCtx.save();
+            mmCtx.translate(px, pz);
+            mmCtx.rotate(-yaw);
+            mmCtx.fillStyle = "#facc15";
+            mmCtx.beginPath();
+            mmCtx.moveTo(0, -6);
+            mmCtx.lineTo(-4.5, 5);
+            mmCtx.lineTo(4.5, 5);
+            mmCtx.closePath();
+            mmCtx.fill();
+            mmCtx.restore();
+        }
+
+        // Ana Döngü
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isPlaying && !gameOver) {
+                busGroup.position.x += 0.28;
+                busGroup.position.z += 0.28;
+
+                const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+                const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+
+                if (flightState === "bus") {
+                    playerGroup.position.copy(busGroup.position);
+                    playerGroup.visible = false;
+                    if (busGroup.position.x > 130) {
+                        flightState = "gliding";
+                        gliderMesh.visible = true;
+                        document.getElementById("busPrompt").style.display = "none";
+                    }
+                } else if (flightState === "gliding") {
+                    playerGroup.visible = true;
+                    const glideSpeed = 0.48;
+                    if (keys["KeyW"]) playerGroup.position.addScaledVector(forward, glideSpeed);
+                    if (keys["KeyS"]) playerGroup.position.addScaledVector(forward, -glideSpeed);
+                    if (keys["KeyA"]) playerGroup.position.addScaledVector(right, -glideSpeed);
+                    if (keys["KeyD"]) playerGroup.position.addScaledVector(right, glideSpeed);
+
+                    playerGroup.position.y -= 0.25;
+                    playerGroup.rotation.y = yaw;
+
+                    const floorY = getGroundHeight(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
+                    if (playerGroup.position.y <= floorY) {
+                        playerGroup.position.y = floorY;
+                        flightState = "ground";
+                        gliderMesh.visible = false;
+                        playerStats.onGround = true;
+                    }
+                } else {
+                    playerGroup.visible = !isScoped; // Dürbün açıkken karakter görüşü kapatmasın
+                    const isSprinting = (keys["ShiftLeft"] || keys["ShiftRight"]) && !isScoped;
+                    const speed = isScoped ? 0.12 : (isSprinting ? 0.39 : 0.25);
+                    let isMoving = false;
+
+                    if (keys["KeyW"]) { playerGroup.position.addScaledVector(forward, speed); isMoving = true; }
+                    if (keys["KeyS"]) { playerGroup.position.addScaledVector(forward, -speed); isMoving = true; }
+                    if (keys["KeyA"]) { playerGroup.position.addScaledVector(right, -speed); isMoving = true; }
+                    if (keys["KeyD"]) { playerGroup.position.addScaledVector(right, speed); isMoving = true; }
+
+                    resolveBuildingCollision(playerGroup.position);
+
+                    if (isMoving) {
+                        walkCycle += isSprinting ? 0.32 : 0.22;
+                        playerModel.leftLegPivot.rotation.x = Math.sin(walkCycle) * 0.7;
+                        playerModel.rightLegPivot.rotation.x = -Math.sin(walkCycle) * 0.7;
+                        playerModel.leftArmPivot.rotation.x = -Math.sin(walkCycle) * 0.5;
+                    } else {
+                        playerModel.leftLegPivot.rotation.x = 0;
+                        playerModel.rightLegPivot.rotation.x = 0;
+                        playerModel.leftArmPivot.rotation.x = 0;
+                    }
+
+                    const floorY = getGroundHeight(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
+                    playerGroup.position.y += playerStats.vy;
+                    if (playerGroup.position.y > floorY) {
+                        playerStats.vy -= 0.016;
+                        playerStats.onGround = false;
+                    } else {
+                        playerGroup.position.y = floorY;
+                        playerStats.vy = 0;
+                        playerStats.onGround = true;
+                    }
+                    playerGroup.rotation.y = yaw;
+                }
+
+                const limit = mapSize / 2 - 2;
+                playerGroup.position.x = Math.max(-limit, Math.min(limit, playerGroup.position.x));
+                playerGroup.position.z = Math.max(-limit, Math.min(limit, playerGroup.position.z));
+
+                // Bölge İsmi Güncelleme (5 POI)
+                const px = playerGroup.position.x, pz = playerGroup.position.z;
+                if (flightState !== "ground") document.getElementById("locationTag").innerText = "Bölge: Gökyüzü";
+                else if (Math.hypot(px, pz) < 38) document.getElementById("locationTag").innerText = "Bölge: Tilted Towers";
+                else if (Math.hypot(px + 85, pz + 85) < 35) document.getElementById("locationTag").innerText = "Bölge: Pleasant Park";
+                else if (Math.hypot(px - 85, pz - 85) < 35) document.getElementById("locationTag").innerText = "Bölge: Retail Row";
+                else if (Math.hypot(px + 85, pz - 85) < 35) document.getElementById("locationTag").innerText = "Bölge: Loot Lake";
+                else if (Math.hypot(px - 85, pz + 85) < 35) document.getElementById("locationTag").innerText = "Bölge: Tomato Temple";
+                else document.getElementById("locationTag").innerText = "Bölge: Yeşil Vadi";
+
+                // Eşya Toplama
+                for (let i = items.length - 1; i >= 0; i--) {
+                    const it = items[i];
+                    it.mesh.rotation.y += 0.04;
+                    if (playerGroup.position.distanceTo(it.mesh.position) < 2.2) {
+                        if (it.type === "medkit") playerStats.hp = Math.min(100, playerStats.hp + 35);
+                        if (it.type === "shield") playerStats.shield = Math.min(100, playerStats.shield + 50);
+                        if (it.type === "wood") playerStats.wood += 40;
+                        scene.remove(it.mesh);
+                        items.splice(i, 1);
+                    }
+                }
+
+                // Fırtına
+                if (stormRadius > 20) stormRadius -= 0.025;
+                stormMesh.scale.set(stormRadius, 1, stormRadius);
+                if (flightState === "ground" && Math.hypot(px, pz) > stormRadius) {
+                    playerStats.hp -= 0.1;
+                }
+
+                // Parçacık Efektleri
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const pt = particles[i];
+                    pt.mesh.position.add(pt.vel);
+                    pt.vel.y -= 0.015;
+                    pt.life--;
+                    if (pt.life <= 0) { scene.remove(pt.mesh); particles.splice(i, 1); }
+                }
+
+                // Mermiler
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    const b = bullets[i];
+                    b.mesh.position.addScaledVector(b.dir, b.speed);
+                    b.life--;
+                    let hit = false;
+
+                    // Bina Duvarına Çarpma
+                    for (const bld of buildings) {
+                        if (Math.abs(b.mesh.position.x - bld.x) < bld.w / 2 &&
+                            Math.abs(b.mesh.position.z - bld.z) < bld.d / 2 &&
+                            b.mesh.position.y < bld.h) {
+                            spawnImpactParticles(b.mesh.position, 0x94a3b8);
+                            hit = true;
+                            break;
+                        }
+                    }
+
+                    // Oyuncu Duvarı
+                    if (!hit) {
+                        for (let j = walls.length - 1; j >= 0; j--) {
+                            if (b.mesh.position.distanceTo(walls[j].mesh.position) < 2.2) {
+                                walls[j].hp -= b.damage;
+                                spawnImpactParticles(b.mesh.position, 0xd97706);
+                                if (walls[j].hp <= 0) { scene.remove(walls[j].mesh); walls.splice(j, 1); }
+                                hit = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Ağaç
+                    if (!hit) {
+                        for (let j = trees.length - 1; j >= 0; j--) {
+                            const t = trees[j];
+                            if (Math.hypot(b.mesh.position.x - t.x, b.mesh.position.z - t.z) < 2 && b.mesh.position.y < 7) {
+                                t.hp -= b.damage;
+                                spawnImpactParticles(b.mesh.position, 0x16a34a);
+                                if (b.owner === "player") playerStats.wood += 12;
+                                if (t.hp <= 0) { scene.remove(t.mesh); trees.splice(j, 1); }
+                                hit = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Düşmanlara İsabet (Hem Oyuncu Hem Diğer Botlar Vurabilir!)
+                    if (!hit) {
+                        for (let j = enemies.length - 1; j >= 0; j--) {
+                            const en = enemies[j];
+                            if (en.id === b.shooterId) continue; // Kendini vurmasın
+                            const hitRadius = 1.5 * en.type.scale;
+                            const targetCenter = en.model.group.position.clone().add(new THREE.Vector3(0, 1.4 * en.type.scale, 0));
+
+                            if (b.mesh.position.distanceTo(targetCenter) < hitRadius) {
+                                en.hp -= b.damage;
+                                hit = true;
+                                spawnImpactParticles(b.mesh.position, 0xef4444);
+
+                                if (b.owner === "player") {
+                                    triggerHitEffect(targetCenter.clone().add(new THREE.Vector3(0, 1.2, 0)), b.damage);
+                                }
+
+                                if (en.hp <= 0) {
+                                    spawnItem(itemTypes[Math.floor(Math.random() * 3)], en.model.group.position.x, en.model.group.position.y, en.model.group.position.z);
+                                    scene.remove(en.model.group);
+                                    enemies.splice(j, 1);
+                                    if (b.owner === "player") {
+                                        playerStats.kills++;
+                                        playerStats.wood += 30;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    // Oyuncuya İsabet
+                    if (!hit && b.owner === "enemy" && flightState === "ground") {
+                        if (b.mesh.position.distanceTo(playerGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0))) < 1.3) {
+                            takeDamage(b.damage);
+                            spawnImpactParticles(b.mesh.position, 0x38bdf8);
+                            hit = true;
+                        }
+                    }
+
+                    if (hit || b.life <= 0) {
+                        scene.remove(b.mesh);
+                        bullets.splice(i, 1);
+                    }
+                }
+
+                // Düşman Yapay Zekası (En Yakın Hedefe: Oyuncu veya Başka Düşmana Saldır!)
+                enemies.forEach(en => {
+                    const pos = en.model.group.position;
+                    let targetPos = null;
+                    let minDist = 85;
+
+                    // Oyuncu yerdeyse mesafesini ölç
+                    if (flightState === "ground") {
+                        const dPlayer = pos.distanceTo(playerGroup.position);
+                        if (dPlayer < minDist) {
+                            minDist = dPlayer;
+                            targetPos = playerGroup.position;
+                        }
+                    }
+
+                    // Diğer düşmanlara olan mesafeyi ölç (Bot vs Bot)
+                    enemies.forEach(other => {
+                        if (other.id !== en.id) {
+                            const dOther = pos.distanceTo(other.model.group.position);
+                            if (dOther < minDist) {
+                                minDist = dOther;
+                                targetPos = other.model.group.position;
+                            }
+                        }
+                    });
+
+                    let enMoving = false;
+                    if (Math.hypot(pos.x, pos.z) > stormRadius - 5) {
+                        const toCenter = new THREE.Vector3(-pos.x, 0, -pos.z).normalize();
+                        pos.addScaledVector(toCenter, en.type.speed * 1.2);
+                        enMoving = true;
+                    } else if (targetPos && minDist > 11) {
+                        const toTarget = new THREE.Vector3().subVectors(targetPos, pos).normalize();
+                        toTarget.y = 0;
+                        pos.addScaledVector(toTarget, en.type.speed);
+                        enMoving = true;
+                    }
+
+                    resolveBuildingCollision(pos);
+
+                    if (enMoving) {
+                        en.walkTime += en.type.speed * 1.6;
+                        en.model.leftLegPivot.rotation.x = Math.sin(en.walkTime) * 0.65;
+                        en.model.rightLegPivot.rotation.x = -Math.sin(en.walkTime) * 0.65;
+                    }
+
+                    if (targetPos) {
+                        en.model.group.lookAt(targetPos.x, 0, targetPos.z);
+                        if (minDist < 70) {
+                            en.cooldown--;
+                            if (en.cooldown <= 0) {
+                                const aimDir = new THREE.Vector3().subVectors(
+                                    targetPos.clone().add(new THREE.Vector3(0, 1.5, 0)),
+                                    pos.clone().add(new THREE.Vector3(0, 1.6 * en.type.scale, 0))
+                                ).normalize();
+
+                                const eb = new THREE.Mesh(
+                                    new THREE.SphereGeometry(0.22 * en.type.scale, 8, 8),
+                                    new THREE.MeshBasicMaterial({ color: en.type.shirt })
+                                );
+                                eb.position.copy(pos).add(new THREE.Vector3(0, 1.6 * en.type.scale, 0)).addScaledVector(aimDir, 1.5);
+                                scene.add(eb);
+                                bullets.push({ mesh: eb, dir: aimDir, speed: 1.3, damage: en.type.damage, owner: "enemy", shooterId: en.id, life: 75 });
+                                en.cooldown = en.type.cooldown + Math.random() * 45;
+                            }
+                        }
+                    }
+                });
+
+                // HUD & Mini-Map Güncelleme
+                const curHp = Math.max(0, Math.ceil(playerStats.hp));
+                const curShield = Math.max(0, Math.ceil(playerStats.shield));
+                document.getElementById("hpText").innerText = `${curHp} / 100`;
+                document.getElementById("hpBar").style.width = `${curHp}%`;
+                document.getElementById("shieldText").innerText = `${curShield} / 100`;
+                document.getElementById("shieldBar").style.width = `${curShield}%`;
+
+                document.getElementById("woodVal").innerText = playerStats.wood;
+                document.getElementById("enemyCount").innerText = enemies.length;
+                document.getElementById("killCount").innerText = playerStats.kills;
+
+                drawMinimap();
+
+                if (playerStats.hp <= 0) {
+                    triggerEnd("ELENDİN!", `Sıralama: #${enemies.length + 1} | Toplam Leş: ${playerStats.kills}`);
+                } else if (enemies.length === 0) {
+                    triggerEnd("#1 VICTORY ROYALE!", `Ada Şampiyonu Oldun! | Toplam Leş: ${playerStats.kills}`);
+                }
+            }
+
+            // Kamera Konumu (Dürbün Açıkken FPS Bakışı, Kapalıyken TPS Bakışı)
+            if (isScoped) {
+                camera.position.copy(playerGroup.position).add(new THREE.Vector3(0, 2.3, 0));
+                camera.lookAt(
+                    playerGroup.position.x - Math.sin(yaw) * 20,
+                    playerGroup.position.y + 2.3 - pitch * 10,
+                    playerGroup.position.z - Math.cos(yaw) * 20
+                );
+            } else {
+                const camDist = flightState === "bus" ? 16 : 7.5;
+                const camOffset = new THREE.Vector3(
+                    Math.sin(yaw) * camDist * Math.cos(pitch),
+                    3.5 + Math.sin(pitch) * camDist,
+                    Math.cos(yaw) * camDist * Math.cos(pitch)
+                );
+                camera.position.copy(playerGroup.position).add(camOffset);
+                camera.lookAt(
+                    playerGroup.position.x - Math.sin(yaw) * 5,
+                    playerGroup.position.y + 2 - pitch * 3,
+                    playerGroup.position.z - Math.cos(yaw) * 5
+                );
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
